@@ -49,5 +49,5 @@ jobs:
         with:
           app-name: 'web-game-rpg'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_B8B387AE96F64D93BA7A9969B220A24B }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_81BB2E48C8834248A805C65FA4D97474 }}
           package: '*.jar'
