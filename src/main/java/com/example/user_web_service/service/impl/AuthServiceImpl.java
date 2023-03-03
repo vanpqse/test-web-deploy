@@ -11,6 +11,9 @@ import com.example.user_web_service.form.LoginForm;
 import com.example.user_web_service.form.LogoutForm;
 import com.example.user_web_service.form.RefreshTokenForm;
 import com.example.user_web_service.payload.response.RefreshTokenResponse;
+import com.example.user_web_service.redis.RedisValueCache;
+import com.example.user_web_service.redis.locker.DistributedLocker;
+import com.example.user_web_service.redis.locker.LockExecutionResult;
 import com.example.user_web_service.repository.GameServerRepository;
 import com.example.user_web_service.repository.UserRepository;
 import com.example.user_web_service.security.jwt.*;
@@ -24,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AccountExpiredException;
@@ -39,6 +43,7 @@ import org.springframework.stereotype.Service;
 import javax.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -68,10 +73,14 @@ public class AuthServiceImpl implements AuthService {
     private UserService userService;
     @Autowired
     private GameServerRepository gameServerRepository ;
-
+    @Autowired
+    private RedisValueCache redisValueCache;
+    @Autowired
+    private DistributedLocker distributedLocker;
     public AuthServiceImpl(ModelMapper mapper) {
         this.mapper = mapper;
     }
+
     @Override
     public ResponseEntity<ResponseObject> validateLoginForm(LoginForm loginForm) {
         if ((loginForm.getUsername().isEmpty() || loginForm.getUsername().isBlank()) && (loginForm.getPassword().isEmpty() || loginForm.getPassword().isBlank())) {
@@ -84,13 +93,41 @@ public class AuthServiceImpl implements AuthService {
         return null;
     }
 
-    @Override
-    public ResponseEntity<ResponseObject> login(LoginForm loginForm) {
-        ResponseEntity<ResponseObject> responseEntity = this.validateLoginForm(loginForm);
-        if (responseEntity != null) {
-            return responseEntity;
-        }
+//    @Override
+//    public ResponseEntity<ResponseObject> login(LoginForm loginForm) {
+//        ResponseEntity<ResponseObject> responseEntity = this.validateLoginForm(loginForm);
+//        if (responseEntity != null) {
+//            return responseEntity;
+//        }
+//
+//        try {
+//            Authentication authentication = authenticationManager.authenticate(
+//                    new UsernamePasswordAuthenticationToken(loginForm.getUsername(), loginForm.getPassword())
+//            );
+//            SecurityContextHolder.getContext().setAuthentication(authentication);
+//            Principal userPrinciple = (Principal) authentication.getPrincipal();
+//            String accessToken = jwtProvider.createToken(userPrinciple);
+//            String refreshToken = refreshTokenProvider.createRefreshToken(loginForm.getUsername()).getToken();
+//            String gameToken = gameTokenProvider.createGameToken(loginForm.getUsername()).getToken();
+//            return ResponseEntity.status(HttpStatus.ACCEPTED).body(new ResponseObject(HttpStatus.ACCEPTED.toString(), "Login success!", null, new JwtResponse(accessToken, refreshToken, gameToken)));
+//        } catch (AuthenticationException e) {
+//            if (e instanceof DisabledException) {
+//                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Account has been locked. Please contact " + companyEmail + " for more information", null, null));
+//            }
+//            if(e instanceof AccountExpiredException){
+//                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "The account has expired. Please contact " + companyEmail + " for more information", null, null));
+//            }
+//            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Invalid email or password. Please try again.", null, null));
+//        }
+//    }
+@Override
+public ResponseEntity<ResponseObject> login(LoginForm loginForm) {
+    ResponseEntity<ResponseObject> responseEntity = this.validateLoginForm(loginForm);
+    if (responseEntity != null) {
+        return responseEntity;
+    }
 
+    LockExecutionResult<ResponseEntity<ResponseObject>> lockResult = distributedLocker.lock("login-form", 30, 10, () -> {
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(loginForm.getUsername(), loginForm.getPassword())
@@ -106,11 +143,20 @@ public class AuthServiceImpl implements AuthService {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Account has been locked. Please contact " + companyEmail + " for more information", null, null));
             }
             if(e instanceof AccountExpiredException){
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "The account has expired. Please contact " + companyEmail + " for more information", null, null));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Account has expired. Please contact " + companyEmail + " for more information", null, null));
             }
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Invalid email or password. Please try again.", null, null));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ResponseObject(HttpStatus.UNAUTHORIZED.toString(), "Invalid username or password", null, null));
         }
+    });
+
+    if (!lockResult.isLockAcquired()) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ResponseObject(HttpStatus.CONFLICT.toString(), "Failed to acquire lock for login form", null, null));
+    } else if (lockResult.hasException()) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ResponseObject(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "An error occurred while trying to acquire lock for login form", null, null));
+    } else {
+        return lockResult.getResultIfLockAcquired();
     }
+}
 
     @Override
     public ResponseEntity<ResponseObject> validateAccessToken() {

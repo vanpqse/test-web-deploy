@@ -3,7 +3,6 @@ package com.example.user_web_service.config;
 import com.example.user_web_service.helper.Constant;
 import com.example.user_web_service.security.CustomUserDetailService;
 
-import com.example.user_web_service.security.google.LoginOauth2Service;
 import com.example.user_web_service.security.jwt.JwtEntryPoint;
 import com.example.user_web_service.security.jwt.JwtTokenFilter;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +27,7 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 @EnableWebSecurity
 public class SecurityConfig {
 
-	@Autowired
-	LoginOauth2Service loginOauth2Service;
+
 	@Autowired
 	CustomUserDetailService userDetailsService;
 
@@ -61,17 +59,14 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http.cors().and().csrf().disable();
-
-		//đăng nhập bằng google
-		http.authorizeRequests()
-				.antMatchers("/oauth2/**")
-				.permitAll().and()
-				.oauth2Login();
-
+		//
+		http.authorizeRequests().antMatchers("/login/google")
+						.authenticated()
+								.and().oauth2Login();
 
 		//Accept not need authenticate
 		http.authorizeRequests().antMatchers("/swagger-ui/**", "/v3/api-docs/**","/api/v1/auth/login", "/api/v1/auth/accessToken",
-				"/error", "/v2/api-docs/**", "/api/v1/notification/**", "/users/signUpa")
+				"/error", "/v2/api-docs/**", "/api/v1/notification/**", "/users/signUpa","/login/google")
 				.permitAll();
 
 		// apis that need Admin Role to call

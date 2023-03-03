@@ -7,24 +7,21 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 
-import java.io.FileInputStream;
+
 import java.io.IOException;
 
-//@Configuration
-//@RequiredArgsConstructor
-//public class FirebaseConfig {
-//    private final FirebaseProperties firebaseProperties;
-//
-//    @Bean
-//    FirebaseMessaging firebaseMessaging() throws IOException {
-//        GoogleCredentials googleCredentials=GoogleCredentials
-//                .fromStream(new FileInputStream(firebaseProperties.getGoogleCredentials()));
-//        FirebaseOptions firebaseOptions = FirebaseOptions
-//                .builder()
-//                .setCredentials(googleCredentials)
-//                .build();
-//        FirebaseApp app = FirebaseApp.initializeApp(firebaseOptions, "my-app");
-//        return FirebaseMessaging.getInstance(app);
-//    }
-//}
+@Configuration
+@RequiredArgsConstructor
+public class FirebaseConfig {
+    @Bean
+    FirebaseMessaging firebaseMessaging() throws IOException {
+        GoogleCredentials googleCredentials=GoogleCredentials
+                .fromStream( new ClassPathResource("firebase-service-account.json").getInputStream());
+        FirebaseOptions firebaseOptions = FirebaseOptions.builder()
+                .setCredentials(googleCredentials).build();
+        FirebaseApp app = FirebaseApp.initializeApp(firebaseOptions, "my-app");
+        return FirebaseMessaging.getInstance(app);
+    }
+}
